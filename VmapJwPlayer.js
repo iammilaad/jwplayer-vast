@@ -1,0 +1,2855 @@
+
+// (C) 2016 - MiladHeydari <miladheydari.work@gmail.com>
+// Project Based on VAST-VMAP -> by https://github.com/jonhoo/vast-vmap
+
+
+
+if(typeof isLoaded == 'undefined') {
+    isLoaded = true;
+
+    ;(function (name, context, definition) {
+        if (typeof module !== 'undefined' && module.exports) { module.exports = definition(); }
+        else if (typeof define === 'function' && define.amd) { define(definition); }
+        else { context[name] = definition(); }
+    })('Fingerprint', this, function () {
+        'use strict';
+
+
+        var Fingerprint = function (options) {
+            var nativeForEach, nativeMap;
+            nativeForEach = Array.prototype.forEach;
+            nativeMap = Array.prototype.map;
+
+            this.each = function (obj, iterator, context) {
+                if (obj === null) {
+                    return;
+                }
+                if (nativeForEach && obj.forEach === nativeForEach) {
+                    obj.forEach(iterator, context);
+                } else if (obj.length === +obj.length) {
+                    for (var i = 0, l = obj.length; i < l; i++) {
+                        if (iterator.call(context, obj[i], i, obj) === {}) return;
+                    }
+                } else {
+                    for (var key in obj) {
+                        if (obj.hasOwnProperty(key)) {
+                            if (iterator.call(context, obj[key], key, obj) === {}) return;
+                        }
+                    }
+                }
+            };
+
+            this.map = function(obj, iterator, context) {
+                var results = [];
+                // Not using strict equality so that this acts as a
+                // shortcut to checking for `null` and `undefined`.
+                if (obj == null) return results;
+                if (nativeMap && obj.map === nativeMap) return obj.map(iterator, context);
+                this.each(obj, function(value, index, list) {
+                    results[results.length] = iterator.call(context, value, index, list);
+                });
+                return results;
+            };
+
+            if (typeof options == 'object'){
+                this.hasher = options.hasher;
+                this.screen_resolution = options.screen_resolution;
+                this.screen_orientation = options.screen_orientation;
+                this.canvas = options.canvas;
+                this.ie_activex = options.ie_activex;
+            } else if(typeof options == 'function'){
+                this.hasher = options;
+            }
+        };
+
+        Fingerprint.prototype = {
+            get: function(){
+                var keys = [];
+                keys.push(navigator.userAgent);
+                keys.push(navigator.language);
+                keys.push(screen.colorDepth);
+                if (this.screen_resolution) {
+                    var resolution = this.getScreenResolution();
+                    if (typeof resolution !== 'undefined'){ // headless browsers, such as phantomjs
+                        keys.push(resolution.join('x'));
+                    }
+                }
+                keys.push(new Date().getTimezoneOffset());
+                keys.push(this.hasSessionStorage());
+                keys.push(this.hasLocalStorage());
+                keys.push(!!window.indexedDB);
+                //body might not be defined at this point or removed programmatically
+                if(document.body){
+                    keys.push(typeof(document.body.addBehavior));
+                } else {
+                    keys.push(typeof undefined);
+                }
+                keys.push(typeof(window.openDatabase));
+                keys.push(navigator.cpuClass);
+                keys.push(navigator.platform);
+                keys.push(navigator.doNotTrack);
+                keys.push(this.getPluginsString());
+                if(this.canvas && this.isCanvasSupported()){
+                    keys.push(this.getCanvasFingerprint());
+                }
+                if(this.hasher){
+                    return this.hasher(keys.join('###'), 31);
+                } else {
+                    return this.murmurhash3_32_gc(keys.join('###'), 31);
+                }
+
+            },
+
+            murmurhash3_32_gc: function(key, seed) {
+                var remainder, bytes, h1, h1b, c1, c2, k1, i;
+
+                remainder = key.length & 3; // key.length % 4
+                bytes = key.length - remainder;
+                h1 = seed;
+                c1 = 0xcc9e2d51;
+                c2 = 0x1b873593;
+                i = 0;
+
+                while (i < bytes) {
+                    k1 =
+                        ((key.charCodeAt(i) & 0xff)) |
+                        ((key.charCodeAt(++i) & 0xff) << 8) |
+                        ((key.charCodeAt(++i) & 0xff) << 16) |
+                        ((key.charCodeAt(++i) & 0xff) << 24);
+                    ++i;
+
+                    k1 = ((((k1 & 0xffff) * c1) + ((((k1 >>> 16) * c1) & 0xffff) << 16))) & 0xffffffff;
+                    k1 = (k1 << 15) | (k1 >>> 17);
+                    k1 = ((((k1 & 0xffff) * c2) + ((((k1 >>> 16) * c2) & 0xffff) << 16))) & 0xffffffff;
+
+                    h1 ^= k1;
+                    h1 = (h1 << 13) | (h1 >>> 19);
+                    h1b = ((((h1 & 0xffff) * 5) + ((((h1 >>> 16) * 5) & 0xffff) << 16))) & 0xffffffff;
+                    h1 = (((h1b & 0xffff) + 0x6b64) + ((((h1b >>> 16) + 0xe654) & 0xffff) << 16));
+                }
+
+                k1 = 0;
+
+                switch (remainder) {
+                    case 3: k1 ^= (key.charCodeAt(i + 2) & 0xff) << 16;
+                    case 2: k1 ^= (key.charCodeAt(i + 1) & 0xff) << 8;
+                    case 1: k1 ^= (key.charCodeAt(i) & 0xff);
+
+                        k1 = (((k1 & 0xffff) * c1) + ((((k1 >>> 16) * c1) & 0xffff) << 16)) & 0xffffffff;
+                        k1 = (k1 << 15) | (k1 >>> 17);
+                        k1 = (((k1 & 0xffff) * c2) + ((((k1 >>> 16) * c2) & 0xffff) << 16)) & 0xffffffff;
+                        h1 ^= k1;
+                }
+
+                h1 ^= key.length;
+
+                h1 ^= h1 >>> 16;
+                h1 = (((h1 & 0xffff) * 0x85ebca6b) + ((((h1 >>> 16) * 0x85ebca6b) & 0xffff) << 16)) & 0xffffffff;
+                h1 ^= h1 >>> 13;
+                h1 = ((((h1 & 0xffff) * 0xc2b2ae35) + ((((h1 >>> 16) * 0xc2b2ae35) & 0xffff) << 16))) & 0xffffffff;
+                h1 ^= h1 >>> 16;
+
+                return h1 >>> 0;
+            },
+
+            // https://bugzilla.mozilla.org/show_bug.cgi?id=781447
+            hasLocalStorage: function () {
+                try{
+                    return !!window.localStorage;
+                } catch(e) {
+                    return true; // SecurityError when referencing it means it exists
+                }
+            },
+
+            hasSessionStorage: function () {
+                try{
+                    return !!window.sessionStorage;
+                } catch(e) {
+                    return true; // SecurityError when referencing it means it exists
+                }
+            },
+
+            isCanvasSupported: function () {
+                var elem = document.createElement('canvas');
+                return !!(elem.getContext && elem.getContext('2d'));
+            },
+
+            isIE: function () {
+                if(navigator.appName === 'Microsoft Internet Explorer') {
+                    return true;
+                } else if(navigator.appName === 'Netscape' && /Trident/.test(navigator.userAgent)){// IE 11
+                    return true;
+                }
+                return false;
+            },
+
+            getPluginsString: function () {
+                if(this.isIE() && this.ie_activex){
+                    return this.getIEPluginsString();
+                } else {
+                    return this.getRegularPluginsString();
+                }
+            },
+
+            getRegularPluginsString: function () {
+                return this.map(navigator.plugins, function (p) {
+                    var mimeTypes = this.map(p, function(mt){
+                        return [mt.type, mt.suffixes].join('~');
+                    }).join(',');
+                    return [p.name, p.description, mimeTypes].join('::');
+                }, this).join(';');
+            },
+
+            getIEPluginsString: function () {
+                if(window.ActiveXObject){
+                    var names = ['ShockwaveFlash.ShockwaveFlash',//flash plugin
+                        'AcroPDF.PDF', // Adobe PDF reader 7+
+                        'PDF.PdfCtrl', // Adobe PDF reader 6 and earlier, brrr
+                        'QuickTime.QuickTime', // QuickTime
+                        // 5 versions of real players
+                        'rmocx.RealPlayer G2 Control',
+                        'rmocx.RealPlayer G2 Control.1',
+                        'RealPlayer.RealPlayer(tm) ActiveX Control (32-bit)',
+                        'RealVideo.RealVideo(tm) ActiveX Control (32-bit)',
+                        'RealPlayer',
+                        'SWCtl.SWCtl', // ShockWave player
+                        'WMPlayer.OCX', // Windows media player
+                        'AgControl.AgControl', // Silverlight
+                        'Skype.Detection'];
+
+                    // starting to detect plugins in IE
+                    return this.map(names, function(name){
+                        try{
+                            new ActiveXObject(name);
+                            return name;
+                        } catch(e){
+                            return null;
+                        }
+                    }).join(';');
+                } else {
+                    return ""; // behavior prior version 0.5.0, not breaking backwards compat.
+                }
+            },
+
+            getScreenResolution: function () {
+                var resolution;
+                if(this.screen_orientation){
+                    resolution = (screen.height > screen.width) ? [screen.height, screen.width] : [screen.width, screen.height];
+                }else{
+                    resolution = [screen.height, screen.width];
+                }
+                return resolution;
+            },
+
+            getCanvasFingerprint: function () {
+                var canvas = document.createElement('canvas');
+                var ctx = canvas.getContext('2d');
+                var txt = 'clickyab';
+                ctx.textBaseline = "top";
+                ctx.font = "14px 'Arial'";
+                ctx.textBaseline = "alphabetic";
+                ctx.fillStyle = "#f60";
+                ctx.fillRect(125,1,62,20);
+                ctx.fillStyle = "#069";
+                ctx.fillText(txt, 2, 15);
+                ctx.fillStyle = "rgba(102, 204, 0, 0.7)";
+                ctx.fillText(txt, 4, 17);
+                return canvas.toDataURL();
+            }
+
+        };
+
+
+        return Fingerprint;
+
+    });
+
+    var fp = new Fingerprint();
+    var uid = fp.get();
+
+    //EventListener in mobile and desktops
+    var clickEvent = navigator.userAgent.match(/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i) ? 'touchstart' : 'click';
+
+    var addRule = (function (style) {
+        var sheet = document.head.appendChild(style).sheet;
+        return function (selector, css) {
+            var propText = typeof css === "string" ? css : Object.keys(css).map(function (p) {
+                return p + ":" + (p === "content" ? "'" + css[p] + "'" : css[p]);
+            }).join(";");
+            sheet.insertRule(selector + "{" + propText + "}", sheet.cssRules.length);
+        };
+    })(document.createElement("style"));
+    function fetchXML(url, identifier, onSuccess, onFailure) {
+
+        var request;
+
+        // IE 9 CORS method
+        if (window.XDomainRequest)
+        {
+            request = new XDomainRequest();
+
+            request.onload = function()
+            {
+
+                if (request.contentType != null && request.responseText != null)
+                {
+
+                    // IE < 10 requires to parse the XML as string in order to use the getElementsByTagNameNS method
+                    var parser = new DOMParser();
+                    var doc = parser.parseFromString(request.responseText, 'text/xml');
+
+                    onSuccess(doc, identifier);
+
+                }
+                else
+                    onFailure(request, identifier);
+
+            };
+
+            request.onerror = request.ontimeout = function()
+            {
+                onFailure(request, identifier);
+            };
+
+        }
+        else // The standard one
+        {
+
+            request = new XMLHttpRequest();
+
+            request.onreadystatechange = function() {
+                if (request.readyState === 4) {
+                    if (request.status === 200) {
+                        if (request.responseXML !== null) {
+                            onSuccess(request.responseXML, identifier);
+                        } else {
+                            onFailure(request, identifier);
+                        }
+                    } else {
+                        onFailure(request, identifier);
+                    }
+                }
+            };
+
+        }
+
+        request.open("GET", url, true);
+        VAST_VMAP_XHROptions.onBeforeSend(url, identifier, request);
+        request.send(null);
+    }
+    function queryVAST(endpoint, onFetched, onError, parentAd) {
+        var e = "Reached abort limit of (" + VAST_VMAP_XHROptions.defaultVASTAbortLimit + ") wrappers.";
+        /**
+         * Handle the case where there's an error, but no onError provided.
+         */
+        onError = onError || function () {};
+        /**
+         * Abort and call onError() immediately in the following conditions
+         * 1.  There is no parentAd (this would be the root ad) AND the VAST_VMAP_XHROptions.defaultVASTAbortLimit is 0
+         * 2.  There is a parentAd (this is not the root ad) AND parentAd.abortLimit is 0
+         *
+         * Otherwise fetch the next VAST response from endpoint.  The next ad's abortLimit is parentAd.abortLimit - 1.
+         */
+        var abort = ((!parentAd && VAST_VMAP_XHROptions.defaultVASTAbortLimit === 0) ||
+            (parentAd && parentAd.abortLimit === 0)) &&
+            (onError(new Error(e)) || true);
+
+        if (abort) {
+            /**
+             * Put this in setTimeout to avoid being burned by clients with
+             * weird, non-standard, or no console.
+             */
+            setTimeout(function () {
+                if (typeof buster === "undefined") {
+                    if ("warn" in console) {
+                        console.warn(e);
+                    } else {
+                        console.log(e);
+                    }
+                }
+            }, 0);
+        }
+
+        return (abort || fetchXML(endpoint, null, function(doc) {
+            try {
+                new VmapJwPlayers(doc, onFetched, onError, parentAd);
+            } catch(e) {
+                console.error(e.toString());
+                var s = e.stack.split(/\n/);
+                for (var i = 0; i < s.length; i++) {
+                    var msg = s[i];
+                    msg = msg.replace("[arguments not available]", "");
+                    msg = msg.replace(/http:\/\/.*?resources\//, "");
+                    console.debug("\t" + msg);
+                }
+
+                onError();
+            }
+        }, function (e) {
+            console.error("Failed to load VAST from '" + endpoint + "':", e);
+            onError(e);
+        })), void (0);
+    }
+    function TrackingEvents(root, ad) {
+        this.events = {};
+        this.ad = ad;
+
+        if (root === null) {
+            return;
+        }
+
+        if (root.tagName !== "TrackingEvents") {
+            root = root.getElementsByTagName("TrackingEvents");
+            if (root.length !== 1) {
+                return;
+            }
+
+            root = root.item(0);
+        }
+
+        var tracks = root.getElementsByTagName("Tracking");
+        for (var i = 0; i < tracks.length; i++) {
+            var e = tracks[i].getAttribute("event");
+            if (!e) {
+                continue;
+            }
+
+            var offset = null;
+            if (e === "progress") {
+                offset = tracks[i].getAttribute("offset");
+                e += "-" + offset;
+            }
+
+            this.events[e] = this.events[e] || [];
+
+            var ev = {
+                "url": tracks[i].textContent.replace(/\s/g, ""),
+                "offset": offset,
+                "event": e
+            };
+
+            this.events[e].push(ev);
+        }
+    }
+    window.getTimeOffset = [];
+    function VMAP(a, b, c) {
+        this.breaks = [];
+        var d = [], e = this;
+        fetchXML(a, null, function (a) {
+            for (var f = a.getElementsByTagName("AdBreak"), g = [], h = 0; h < f.length; h++) {
+                var i = f.item(h);
+                if (d[h] = i.getAttribute("timeOffset"), 0 !== d[h].indexOf("#")) {
+                    var j = {
+                        ad: null,
+                        breakId: i.getAttribute("breakId"),
+                        tracking: new TrackingEvents(i, null),
+                        position: d[h]
+                    }, k = i.getElementsByTagName("VASTData");
+                    if (0 != k.length)j.ad = new VmapJwPlayers(k.item(0).getElementByTagName(null, "VAST").item(0), targetedAdHandler); else {
+                        var l = i.getElementsByTagName("AdTagURI");
+                        console.log(l)
+                        if (!l) {
+                            console.error("No supported ad target for break #" + h);
+                            continue
+                        }
+                        var m;
+                        !function (a) {
+                            m = function (c) {
+                                a.ad = c, null !== c && b(-1, a.position, c)
+                            }
+                        }(j), queryVAST(l.item(0).textContent.replace(/\s/g, ""), m)
+                    }
+                    e.breaks.push(j), g.push(j.position)
+                }
+            }
+            "function" == typeof c && c(g)
+        }, function (b) {
+            console.error("Failed to load VMAP from '" + a + "':", b), c([])
+        })
+    }
+// console.log(window.getTimeOffset);
+    function VmapJwPlayers(root, onAdsAvailable, onError, parentAd) {
+        this.ads = [];
+        console.log(onAdsAvailable);
+        this.onAdsAvailable = onAdsAvailable;
+        this.onAdsError = onError;
+        this.onReceivedErrorCounter = 0;
+        var adElements = root.getElementsByTagNameNS("*", 'Ad');
+
+        var that = this;
+
+        if (adElements.length === 0) {
+            onError();
+            return;
+        }
+
+        var onAdError = function (e) {
+            that.onReceivedErrorCounter++;
+            if (that.onReceivedErrorCounter === adElements.length) {
+                onError(e);
+                return;
+            }
+        };
+
+        for (var i = 0; i < adElements.length; i++) {
+            var ad = new VmapJwPlayer(this, adElements.item(i), parentAd || null);
+            // console.log(ad);
+            if (ad.isEmpty()) {
+                onAdError();
+                continue;
+            }
+
+            this.ads.push(ad);
+
+            if (ad.hasData() && (!ad.hasSequence() || ad.isNumber(1))) {
+
+                if (onAdsAvailable) {
+                    // Needs to be reset before calling user function since user function
+                    // may take long to execute
+                    var oaf = this.onAdsAvailable;
+                    this.onAdsAvailable = null;
+                    oaf.call(this, this);
+                }
+            } else {
+                var wrapper = adElements.item(i).getElementsByTagName('Wrapper').item(0);
+                var uri = wrapper.getElementsByTagName('VmapJwPlayerTagURI');
+                if (uri.length === 0) {
+                    onAdError();
+                    continue;
+                }
+
+                uri = uri.item(0).textContent.replace(/\s/g, "");
+                var allowPods = wrapper.getAttribute("allowMultipleAds") === "true";
+
+                var onGotFirstAd;
+                (function(ad, allowPods, that) {
+                    onGotFirstAd = function(ads) {
+                        ad.onLoaded(ads, allowPods);
+                        if (that.onAdsAvailable) {
+                            var oaf = that.onAdsAvailable;
+                            that.onAdsAvailable = null;
+                            oaf.call(that, that);
+                        }
+                    };
+                })(ad, allowPods, that);
+                queryVAST(uri, onGotFirstAd, onAdError, ad);
+            }
+        }
+    }
+    function VmapJwPlayer(vast, root, parentAd, onAdAvailable) {
+        this.vast = vast;
+        this.pod = vast;
+        this.parentAd = parentAd;
+        this.onAdAvailable = onAdAvailable;
+        this.abortLimit = parentAd ? parentAd.abortLimit > 0 ? parentAd.abortLimit - 1 :
+            parentAd.abortLimit : VAST_VMAP_XHROptions.defaultVASTAbortLimit;
+        this.sequence = null;
+        this.hasContent = true;
+        this.loaded = true;
+        this.linear = null;
+        this.companions = [];
+        // TODO: Enforce the companions required attribute
+        // Can that even be done here, or must it be done by interface?
+        // Must give interface a way of "rejecting" an ad?
+        this.companionsRequired = "none";
+        this.nonlinears = [];
+        this.nonlinearsTracking = null;
+        this.impressions = [];
+        this.currentPodAd = this;
+        this.sentImpression = false;
+        this.properties = {};
+
+        /**
+         * Copy over tracking and creatives from parent
+         */
+        var i, k;
+        if (this.parentAd !== null) {
+            var pa = this.parentAd;
+
+            this.companionsRequired = pa.companionsRequired;
+            this.linear = pa.linear ? pa.linear.copy(this) : null;
+
+            if (pa.companions.length) {
+                for (i = 0; i < pa.companions.length; i++) {
+                    this.companions.push(pa.companions[i].copy(this));
+                }
+            }
+
+            if (pa.nonlinears.length) {
+                for (i = 0; i < pa.nonlinears.length; i++) {
+                    this.companions.push(pa.nonlinears[i].copy(this));
+                }
+            }
+
+            if (pa.nonlinearsTracking !== null) {
+                this.nonlinearsTracking = pa.nonlinearsTracking.copy(this);
+            }
+
+            for (k in pa.properties) {
+                if (pa.properties.hasOwnProperty(k)) {
+                    this.properties[k] = pa.properties[k];
+                }
+            }
+        }
+
+        if (this.nonlinearsTracking === null) {
+            this.nonlinearsTracking = new TrackingEvents(null, this);
+        }
+
+        if (root.hasAttribute('sequence')) {
+            this.sequence = parseInt(root.getAttribute('sequence'), 10);
+        }
+
+        var inline = root.getElementsByTagName("InLine");
+        if (inline.length === 0) {
+            this.loaded = false;
+            inline = root.getElementsByTagName("Wrapper");
+            // Note here that VmapJwPlayers will automatically fetch wrapped responses for us,
+            // so we don't need to do anything special with it here
+            if (inline.length === 0) {
+                this.hasContent = false;
+                // TODO: error tracking
+                return;
+            }
+        }
+
+        inline = inline.item(0);
+
+        var prop = inline.firstChild;
+        while (prop !== null) {
+            if (prop.nodeType === 1) {
+                switch (prop.tagName) {
+                    case 'Creatives':
+                    case 'InLine':
+                    case 'Wrapper':
+                    case 'Impression':
+                    case 'VmapJwPlayerTagURI':
+                    case 'Error':
+                        break;
+                    default:
+                        this.properties[prop.tagName] = prop.textContent.replace(/^\s*|\s*$/g, "");
+                }
+            }
+            prop = prop.nextSibling;
+        }
+
+        // Extract Impressions
+        var imps = inline.getElementsByTagName("Impression");
+        for (i = 0; i < imps.length; i++) {
+            this.impressions.push(imps.item(i).textContent.replace(/\s/g, ""));
+        }
+
+        /**
+         * Time to find our creatives.
+         * What makes this a lot more ugly that it should be is that we have to merge
+         * up any tracking or creative elements that our wrapper ad created. Not only
+         * that, but the spec isn't particularly helpful in how we might figure out
+         * which elements to merge, so we have to do some heuristics as well.
+         * Oh well, here goes...
+         */
+        var creatives = inline.getElementsByTagName("Creatives");
+        if (creatives.length === 0) {
+            return;
+        }
+
+        creatives = creatives.item(0).getElementsByTagName("Creative");
+        for (i = 0; i < creatives.length; i++) {
+            var creative = creatives.item(i).firstChild;
+
+            // skip TextNodes
+            while (creative !== null && creative.nodeType === 3) {
+                creative = creative.nextSibling;
+            }
+
+            if (creative === null) {
+                continue;
+            }
+
+            var n;
+            switch (creative.tagName) {
+                case "Linear":
+                    n = new VASTLinear(this, creative);
+                    if (this.linear) {
+                        this.linear.augment(n);
+                    } else {
+                        this.linear = n;
+                    }
+                    break;
+                /**
+                 * From the spec:
+                 *
+                 *   When multiple Companion creative are included in the InLine response,
+                 *   identifying which Companion clickthrough event shoud be associated
+                 *   with the Wrapper tracking element can be difficult. The video player
+                 *   may associate Inline Companion clickthrough activity to Wrapper
+                 *   <CompanionClickTracking> events at its own discretion. The Companion
+                 *   id attribute may be a useful association if provided, or the video
+                 *   player can match width and height attributes.
+                 *
+                 * Oh, yeah, and it says nothing about how to match NonLinear elements...
+                 */
+                case "CompanionAds":
+                    if (creative.hasAttribute("required")) {
+                        this.companionsRequired = creative.getAttribute("required");
+                    }
+                /* falls through */
+                case "NonLinearAds":
+                    var tag = creative.tagName.replace("Ads", "");
+                    var Cls = tag === "Companion" ? VASTCompanion : VASTNonLinear;
+                    var arr = tag === "Companion" ? this.companions : this.nonlinears;
+
+                    if (tag === "NonLinear") {
+                        var track = new TrackingEvents(creative, this);
+                        this.nonlinearsTracking.augment(track);
+                    }
+
+                    // Since we add to arr, we store the length to we don't start merging
+                    // sibling elements.
+                    var arrl = arr.length;
+
+                    var items = creative.getElementsByTagName(tag);
+                    for (var j = 0; j < items.length; j++) {
+                        n = new Cls(this, items.item(j));
+
+                        for (k = 0; k < arrl; k++) {
+                            var o = arr[k];
+
+                            // Match if two values are equal or only one is set
+                            var m1 = o.attribute('id', n.attribute('id')) === n.attribute('id', o.attribute('id'));
+                            var m2 = o.attribute('width', n.attribute('width')) === n.attribute('width', o.attribute('width'));
+                            var m3 = o.attribute('height', n.attribute('height')) === n.attribute('height', o.attribute('height'));
+
+                            // Set if both values are set
+                            var idset = o.attribute('id') !== undefined && n.attribute('id') !== undefined;
+                            var widthset = o.attribute('width') !== undefined && n.attribute('width') !== undefined;
+                            var heightset = o.attribute('height') !== undefined && n.attribute('height') !== undefined;
+
+                            // If all match and at least one set for both
+                            if (m1 && m2 && m3 && (idset || widthset || heightset)) {
+                                // If we do this merge then the n is basically a copy of o, which
+                                // is already in the array, so we don't want to add it again.
+                                o.augment(n);
+                                n = null;
+                                break;
+                            }
+                        }
+
+                        if (n !== null) {
+                            arr.push(n);
+                        }
+                    }
+                    break;
+            }
+        }
+    }
+    function VASTCreative(ad, root) {
+        this.root = root;
+        this.clickThrough = null;
+        if (root.tagName === "NonLinear") {
+            root = root.parentNode;
+        }
+        this.tracking = new TrackingEvents(root, ad);
+    }
+    function VASTLinear(ad, root) {
+        VASTCreative.call(this, ad, root);
+        this.mediaFiles = [];
+        this.clickThrough = null;
+        this.duration = null;
+        this.adParameters = null;
+
+        var i;
+
+        var clicks = root.getElementsByTagName("VideoClicks");
+        if (clicks.length) {
+            clicks = clicks.item(0);
+            var ct = clicks.getElementsByTagName("ClickThrough");
+            if (ct.length) {
+                this.clickThrough = ct.item(0).textContent.replace(/\s/g, "");
+                // console.log(this.clickThrough);
+            }
+
+            ct = clicks.getElementsByTagName("ClickTracking");
+            for (i = 0; i < ct.length; i++) {
+                this.tracking.addClickTracking(ct.item(i).textContent.replace(/\s/g, ""));
+            }
+        }
+
+        var d = root.getElementsByTagName("Duration");
+        if (d.length) {
+            this.duration = this.timecodeFromString(d.item(0).textContent.replace(/\s/g, ""));
+        }
+
+        var ap = root.getElementsByTagName("AdParameters");
+        if (ap.length) {
+            this.adParameters = ap.item(0).textContent.replace(/\s/g, "");
+        }
+
+        var medias = root.getElementsByTagName("MediaFiles");
+        if (!medias.length) {
+            return;
+        }
+
+        medias = medias.item(0).getElementsByTagName("MediaFile");
+        for (i = 0; i < medias.length; i++) {
+            var m = medias.item(i);
+            var mf = {};
+            for (var a = 0; a < m.attributes.length; a++) {
+                mf[m.attributes[a].name] = m.attributes[a].value;
+            }
+            mf["src"] = medias.item(i).textContent.replace(/\s/g, "");
+            this.mediaFiles.push(mf);
+        }
+    }
+    function VASTStatic(ad, root) {
+        VASTCreative.call(this, ad, root);
+        this.resources = {
+            "iframe": null,
+            "html": null,
+            "images": {}
+        };
+
+        var res;
+        res = root.getElementsByTagName("IFrameResource");
+
+        if (res.length > 0) {
+            this.resources["iframe"] = res.item(0).textContent.replace(/\s/g, "");
+
+        }
+
+        res = root.getElementsByTagName("HTMLResource");
+        if (res.length > 0) {
+            this.resources["html"] = res.item(0).textContent.replace(/\s/g, "");
+        }
+
+        res = root.getElementsByTagName("StaticResource");
+        for (var i = 0; i < res.length; i++) {
+            this.resources["images"][res.item(i).getAttribute("creativeType")] = res.item(i).textContent.replace(/\s/g, "");
+        }
+
+    }
+    function VASTCompanion(ad, root) {
+        VASTStatic.call(this, ad, root);
+        this.altText = "";
+
+        VASTStatic.prototype.extractClicks.call(this, "Companion");
+        var el = root.getElementsByTagName("AltText");
+        if (el.length) {
+            this.altText = el.item(0).textContent.replace(/\s/g, "");
+        }
+    }
+    function VASTNonLinear(ad, root) {
+        VASTStatic.call(this, ad, root);
+        this.tracking = ad.nonlinearsTracking;
+        VASTStatic.prototype.extractClicks.call(this, "NonLinear");
+    }
+
+    function CYplayer(type,source ,clickThrough){
+
+        this.Media=null;
+        this.linkOnMobile = null;
+        this.type=type;
+        this.source=source;
+        this.duration=9;
+        this.pos=0;
+        this.functional=null;
+        this.functionalcomp=null;
+        this.end=false;
+        this.createElementsByType=function(){
+
+            if(this.type.indexOf("image")>-1){
+
+
+                if(navigator.userAgent.match(/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i)) {
+                    this.Media=document.createElement("div");
+                    this.Media.style.background="url('"+this.source+"')";
+                    this.Media.style.backgroundSize="100% 100%";
+                    this.Media.style.width="100%";
+                    this.Media.style.height="100%";
+
+                } else {
+                    this.Media=document.createElement("A");
+                    this.Media.style.display="block";
+                    this.Media.style.background="url('"+this.source+"')";
+                    this.Media.style.backgroundSize="100% 100%";
+                    this.Media.setAttribute("href",clickThrough);
+                    this.Media.setAttribute("target","_blank");
+                    this.Media.style.width="100%";
+                    this.Media.style.height="100%";
+                }
+
+            }else if(this.type.indexOf("html")>-1){
+
+                this.Media=document.createElement("div");
+                this.Media.innerHTML=decodeURI(this.source);
+
+            }else if(this.type.indexOf("iframe")>-1){
+
+                this.Media=document.createElement("iframe");
+                this.Media.src=this.source;
+                this.Media.style.background="#fff";
+
+
+            }
+        };
+
+        this.setDuration=function(duration){
+            this.duration=duration
+        };
+
+        this.getDuration=function(){
+            return this.duration;
+        };
+
+        this.getPosition=function(){
+            return this.pos;
+        };
+
+        this.onTime=function (functional){
+            this.functional=functional;
+
+        };
+
+        this.onComplete = function (functional){
+            this.functionalcomp=functional;
+
+        };
+
+        this.stop = function(){
+
+            this.end=true;
+
+        };
+
+        this.play=function(){
+            if(this.pos>this.duration || this.end==true){
+
+                this.functionalcomp();
+                return;
+            }
+            this.pos+=0.1;
+            var that=this;
+            setTimeout(function(e){
+                that.functional();
+                that.play();
+            },100);
+        };
+
+        this.onClick=function(functioncal){
+
+            if(this.type=="iframe"){
+            }else if(this.type=="image"){
+                this.Media.addEventListener("click",functioncal);
+            }else{
+                //this.Meida.addEventListener("click",functioncal);
+            }
+            this.Media.style.cursor="pointer";
+        };
+
+        this.setSize=function(){
+            this.Media.style.border="none";
+            this.Media.style.width='100%';
+            this.Media.style.height='100%';
+            if(this.type!="image"){
+
+            }else{
+                //this.Media.style.top="50%";
+                //this.Media.style.position="absolute";
+                //this.Media.style.transform = "translate(0, 50%)";
+                //background-size:100%,100%;
+                this.Media.style.backgroundSize="100%,100%";
+                this.Media.style.backgroundRepeat="no-repeat";
+                this.Media.style.backgroundPosition="center center";
+            }
+        }
+
+        this.createElementsByType();
+
+    };
+    function CYVastPlayer(debug) {
+
+        this.requestSettings = {
+            width: null,
+            height: null,
+            bitrate: null,
+            insertionPointType: null,
+            playbackPosition: null
+        };
+        this.activeAd = null;
+        this.adPlaying = false;
+        this.adsEnabled = true;
+        this.breaks = [];
+        this.lastPlayedBreak = null;
+        this.debug = !!debug;
+
+
+        this.adPlayer=null;
+        this.loadedVast=0;
+        this.AmIReady=false;
+        this.token=parseInt(Math.random()*1000000000);
+
+        this.onAds=false;
+
+        this.lastPlayedMidroll=0;
+
+        this.IntCurrentTime=0;
+
+        this.BannerNonLinear=null;
+        this.BannerCampain=null;
+        this.startedYet=false;
+
+        this.adPlayerTimeLine=null;
+
+        this.TrackingEvent={
+            firstQuartile:false,
+            midpoint:false,
+            thirdQuartile:false,
+            complete:false
+        };
+
+        this.Skipable=false;
+
+        this.skip=null;
+        this.adsPlayerZone=null;
+
+        this.video=null;
+
+        this._bindContextForCallbacks();
+    };
+    var VAST_VMAP_XHROptions = {
+        XMLHttpRequest: function () {
+            return new XMLHttpRequest();
+        },
+        onBeforeSend: function (url, identifier, XHR) {
+        },
+        defaultVASTAbortLimit: -1
+    };
+    VmapJwPlayers, VmapJwPlayer, VASTLinear, VASTNonLinear, VASTCompanion;
+
+    TrackingEvents.prototype.copy = function(ad) {
+        var n = Object.create(TrackingEvents.prototype);
+        n.events = {};
+        for (var e in this.events) {
+            if (this.events.hasOwnProperty(e)) {
+                n.events[e] = [].concat(this.events[e]);
+            }
+        }
+        n.ad = ad;
+        return n;
+    };
+    TrackingEvents.prototype.finger = function(url) {
+        if (typeof window === 'object' && typeof Image !== 'undefined' && typeof buster === 'undefined') {
+            // use an image where possible to avoid CORS errors in the console
+            var track = new Image();
+            track.src = url;
+            return;
+        }
+
+        var request = VAST_VMAP_XHROptions.XMLHttpRequest();
+        request.open("get", url, true);
+        VAST_VMAP_XHROptions.onBeforeSend(url, "tracking-pixel", request);
+        request.send();
+    };
+    TrackingEvents.prototype.augment = function(other) {
+        for (var e in other.events) {
+            if (!other.events.hasOwnProperty(e)) {
+                continue;
+            }
+
+            if (!this.events[e]) {
+                this.events[e] = other.events[e];
+            } else {
+                this.events[e] = this.events[e].concat(other.events[e]);
+            }
+        }
+    };
+    TrackingEvents.prototype.addClickTracking = function(url) {
+        var ev = {
+            "url": url,
+            "event": "click",
+            "offset": null
+        };
+
+        if (!this.events["click"]) {
+            this.events["click"] = [ev];
+        } else {
+            this.events["click"].push(ev);
+        }
+    };
+    /**
+     * Returns all events of the given types
+     *
+     * @param {string[]} evs Event types to look for
+     * @returns {object[]} A list of objects each representing one tracked event.
+     *   Every object contains an "event" index holding the event name and
+     *   optionally an "attributes" index holding a key-value mapping of any
+     *   additional attributes for the event (like "offset" for progress events).
+     */
+    TrackingEvents.prototype.getEventsOfTypes = function(evts) {
+        var ret = [];
+        var includeProgress = evts.indexOf('progress') > -1;
+
+        for (var e in this.events) {
+            if (!this.events.hasOwnProperty(e)) {
+                continue;
+            }
+
+            if (evts.indexOf(e) > -1 || (includeProgress && e.indexOf("progress-") === 0)) {
+                ret = ret.concat(this.events[e]);
+            }
+        }
+
+        return ret;
+    };
+    /**
+     * Notifies all URIs that have subscribed to the given event type.
+     *
+     * @param {string} ev Event type to notify
+     * @param {object} macros Macros to replace in the tracking URIs
+     */
+    TrackingEvents.prototype.track = function(ev, _macros) {
+        if (!this.events[ev] || this.events[ev].length === 0) {
+            return;
+        }
+
+        var evs = [].concat(this.events[ev]);
+        var i;
+
+        var macros = {};
+        for (var m in _macros) {
+            if (!_macros.hasOwnProperty(m)) {
+                continue;
+            }
+
+            macros["[" + m + "]"] = encodeURIComponent(_macros[m]);
+        }
+
+        // First creative view for a creative within an ad should count as an
+        // impression
+        if (ev === "creativeView") {
+            var ad = this.ad;
+            while (ad !== null && !ad.hasSentImpression()) {
+                ad.impressionSent();
+                for (i = 0; i < ad.impressions.length; i++) {
+                    evs.push({"url": ad.impressions[i]});
+                }
+                ad = ad.parentAd;
+            }
+        }
+
+        var that = this;
+        for (i = 0; i < evs.length; i++) {
+            var e = evs[i];
+            var url = e["url"];
+
+            // Standard dictates 8 digits of randomness
+            var rand = '' + parseInt(Math.random() * 99999999, 10);
+            while (rand.length !== 8) {
+                rand = '0' + rand;
+            }
+            macros["[CACHEBUSTING]"] = rand;
+
+            for (m in macros) {
+                if (!macros.hasOwnProperty(m)) {
+                    continue;
+                }
+                url = url.replace(m, macros[m]);
+            }
+
+            that.finger(url);
+        }
+    };
+    /**
+     * Query the server for the available Ad Breaks and pass them to the callback
+     *
+     * This function will also asynchronously parse (and fetch if necessary) the
+     * VAST ad specifications for each break in the VMAP response.
+     *
+     * @constructor
+     * @param {string} server The server URL to contact to retrieve the VMAP
+     * @param {function(number, string, VmapJwPlayers)} adHandler The function to call
+     *   whenever the VAST ad response for an ad break has been fetched and/or
+     *   parsed. This function will be called at most once for every ad break given
+     *   to breakHandler. The first parameter to the function is the corresponding
+     *   index in the list passed to the breakHandler, and the second parameter is
+     *   the VmapJwPlayers object holding the possible ads to play for that break.
+     * @param {?function} breakHandler The function to call when Ad Breaks have been
+     *   fetched. This function will receive a list of break positions. Each
+     *   position can either be a percentage (<1), a number of seconds into the
+     *   content video or one of the string literals "start" or "end". Ordinal
+     *   positions are not supported and thus will not be passed.
+     */
+    VMAP.prototype.onBreakStart = function(break_index) {
+        this.breaks[break_index].tracking.track("breakStart");
+        return this.breaks[break_index].ad;
+    };
+    VMAP.prototype.onBreakEnd = function(break_index) {
+        this.breaks[break_index].tracking.track("breakEnd");
+    };
+    /**
+     * Returns an ad from the list of ads given by the VAST server
+     *
+     * Will prefer pods unless allowPods === false
+     *
+     * Note that the result of a call to this function might change over time as
+     * more ads are loaded
+     *
+     * @param {boolean} allowPods whether to allow ad pods (multiple videos) or not
+     * @returns {VmapJwPlayer} An ad.
+     */
+    VmapJwPlayers.prototype.getAd = function(allowPods) {
+        var ad = null;
+        if (allowPods) {
+            ad = this.getAdWithSequence(1);
+            if (ad && !ad.current().isEmpty()) {
+                return ad.current();
+            }
+        }
+
+        // So, no pods available.
+        // Just pick the first one we find
+        // Standard does not dictate how to pick an ad...
+        // Theoretically, we could look deep into the Linears to find the ad with the
+        // media file that suits the player best, but that seems like overengineering.
+        for (var i = 0; i < this.ads.length; i++) {
+            if (this.ads[i].hasSequence()) {
+                continue;
+            }
+
+            if (!this.ads[i].current().isEmpty()) {
+                return this.ads[i].current();
+            }
+        }
+    };
+    VmapJwPlayers.prototype.getAdWithSequence = function(seq) {
+        for (var i = 0; i < this.ads.length; i++) {
+            if (this.ads[i].isNumber(seq)) {
+                return this.ads[i];
+            }
+        }
+
+        return null;
+    };
+    /**
+     * Returns the value of the given tag for this ad
+     *
+     * See the VAST spec for what tags may be present on an ad
+     * Note that ad tags are merged from the parent
+     *
+     * @param {string} tag The attribute to get
+     * @param {*} [nothing] Value to return if tag isn't present. Defaults to
+     *   undefined
+     * @returns {?string} The value for that tag for this ad or default if unset
+     */
+    VmapJwPlayer.prototype.getTag = function(tag, nothing) {
+        if (!this.properties.hasOwnProperty(tag)) {
+            return nothing;
+        }
+
+        return this.properties[tag];
+    };
+    /**
+     * Should be called the VAST response matching this wrapped ad is parsed and
+     * ready.
+     *
+     * @param {VmapJwPlayers} ads VmapJwPlayers object wrapped by this ad
+     */
+    VmapJwPlayer.prototype.onLoaded = function(ads, allowPods) {
+        this.pod = ads;
+        this.currentPodAd = ads.getAd(allowPods);
+
+        if (!this.currentPodAd.isEmpty()) {
+            this.loaded = true;
+            if (this.onAdAvailable) {
+                this.onAdAvailable.call(this, this);
+            }
+        }
+    };
+    /**
+     * Returns true if impression metrics has been sent for this ad, false otherwise
+     *
+     * @returns {boolean} true if impression metrics have been sent, false otherwise
+     */
+    VmapJwPlayer.prototype.hasSentImpression = function() {
+        return this.sentImpression;
+    };
+    /**
+     * Indicate that impression metrics have been sent for this ad
+     */
+    VmapJwPlayer.prototype.impressionSent = function() {
+        this.sentImpression = true;
+    };
+
+    /**
+     * Returns the representative ad for this ad.
+     *
+     * For normal ads, this should just return this ad, for pods, it should return
+     * the current ad withing the pod
+     *
+     * @returns {VmapJwPlayer} the representative ad for this ad
+     */
+    VmapJwPlayer.prototype.current = function() {
+        return this.currentPodAd;
+    };
+
+    /**
+     * Determines if this ad has the given sequence number
+     *
+     * @param {number} seq The target sequence number
+     * @returns {boolean} true if this ad has the given sequence number, false
+     *   otherwise
+     */
+    VmapJwPlayer.prototype.isNumber = function(seq) {
+        return this.sequence === seq;
+    };
+
+    /**
+     * Determines if this ad has a sequence number
+     *
+     * @returns {boolean} true if this ad has a sequence number, false otherwise
+     */
+    VmapJwPlayer.prototype.hasSequence = function() {
+        return this.sequence !== null;
+    };
+
+    /**
+     * Determine if this ad has any content (wrapped or inline) or not
+     *
+     * @returns {boolean} True if this <Ad> contains a <Wrapper> or <InLine>, false
+     *   otherwise
+     */
+    VmapJwPlayer.prototype.isEmpty = function() {
+        return !this.hasContent;
+    };
+
+    /**
+     * Determines if the current VmapJwPlayer has inline data. Returns false if it is a
+     * wrapper ad entry that has not yet been loaded.
+     *
+     * @returns {boolean} True if this ad contains an <InLine>, false otherwise
+     */
+    VmapJwPlayer.prototype.hasData = function() {
+        return this.loaded;
+    };
+
+    /**
+     * Returns the next ad after this one (if any)
+     *
+     * TODO: In VAST 2.0, this should return any next ad, not just based on seq
+     *
+     * @returns {?VmapJwPlayer} The next ad or null
+     */
+    VmapJwPlayer.prototype.getNextAd = function() {
+        if (this.vast !== this.pod) {
+            this.currentPodAd = this.currentPodAd.getNextAd();
+            if (this.currentPod !== null) {
+                return this.currentPodAd.current();
+            }
+        }
+
+        if (!this.hasSequence()) {
+            return null;
+        }
+
+        return this.vast.getAdWithSequence(this.sequence + 1).current();
+    };
+
+    /**
+     * Returns the linear creative element associated with this ad.
+     *
+     * @returns {?VASTLinear} the linear creative element associated with this ad or
+     *   null
+     */
+    VmapJwPlayer.prototype.getLinear = function() {
+        return this.linear;
+    };
+
+    /**
+     * Returns all companion banners associated with this ad.
+     *
+     * @returns {VASTCompanion[]} all companion banners associated with this ad
+     */
+    VmapJwPlayer.prototype.getCompanions = function() {
+        return this.companions;
+    };
+    /**
+     * Returns the companion for the given location id if present, null otherwise
+     *
+     * @param {string} id The location id to get the companion banner for
+     * @returns {?VASTCompanion} the companion banner identified by the given id or
+     *   null
+     */
+    VmapJwPlayer.prototype.getCompanion = function(id) {
+        for (var i = 0; i < this.companions.length; i++) {
+            if (this.companions[i].attribute('id') === id) {
+                return this.companions[i];
+            }
+        }
+
+        return null;
+    };
+    /**
+     * Returns one of "all", "any" or "none" in accordance with the VAST spec
+     *
+     * @returns {string} all|any|none
+     */
+    VmapJwPlayer.prototype.companionsRequired = function() {
+        return this.companionsRequired;
+    };
+
+
+    /**
+     * Returns all non-linear creative elements associated with this ad.
+     *
+     * @returns {VASTNonLinear[]} all non-linear creative elements associated with
+     *   this ad
+     */
+    VmapJwPlayer.prototype.getNonLinears = function() {
+        return this.nonlinears;
+    };
+
+    /**
+     * Should be called whenever a trackable event occurs
+     *
+     * Trackable events in the VAST stack are:
+     *   - click
+     *   - creativeView
+     *   - start
+     *   - firstQuartile
+     *   - midpoint
+     *   - thirdQuartile
+     *   - complete
+     *   - mute
+     *   - unmute
+     *   - pause
+     *   - rewind
+     *   - resume
+     *   - fullscreen
+     *   - exitFullscreen
+     *   - expand
+     *   - collapse
+     *   - acceptInvitation
+     *   - close
+     *   - progress
+     *   - skip
+     *
+     * The video player should report these whenever possible, except all the
+     * progress events (start, complete, midpoint and *Quartile), which should only
+     * be reported for Linear Creative elements according to the positions returned
+     * from getTrackingPoints().
+     *
+     * This function will only do any real work if the reported event actually has a
+     * tracking entry in the VAST document
+     *
+     * @param {string} ev The event type to report
+     * @param {number} position The number of seconds into ad playback where the
+     *   event occured
+     * @param {string} asset The asset URI being played
+     */
+    VASTCreative.prototype.track = function(ev, position, asset) {
+        this.tracking.track(ev, {
+            "CONTENTPLAYHEAD": this.timecodeToString(position),
+            "ASSETURI": asset
+        });
+    };
+    /**
+     * Takes a timestamp and returns it as a timecode string HH:MM:SS
+     *
+     * @param {number} time Timestamp in seconds
+     * @returns {string} Timestamp as timecode
+     */
+    VASTCreative.prototype.timecodeToString = function(time) {
+        var hrs = '0' + parseInt(time/3600, 10);
+        var mts = '0' + parseInt((time % 3600)/60, 10);
+        var scs = '0' + time % 60;
+        var str = hrs + ':' + mts + ':' + scs;
+        return str.replace(/(^|:|\.)0(\d{2})/g, "$1$2");
+    };
+
+    /**
+     * Takes a string and returns it as a number of seconds if it is a timecode,
+     * otherwise just returns the string (XX% for example)
+     *
+     * @param {string} time Timecode
+     * @returns {number|string} Timecode in seconds or input string
+     */
+    VASTCreative.prototype.timecodeFromString = function(time) {
+        if (time.indexOf(':') === -1) {
+            return time;
+        }
+
+        return parseInt(time.substr(0,2), 10) * 3600 +
+            parseInt(time.substr(3,2), 10) * 60 +
+            parseInt(time.substr(6,2), 10);
+    };
+
+    /**
+     * Returns the URL to send the user to if this creative is clicked
+     *
+     * @returns {?string} URL to send the user to or null if none has been set
+     */
+    VASTCreative.prototype.getClickThrough = function() {
+        return this.clickThrough;
+    };
+
+    /**
+     * Returns the value of the given attribute for the creative
+     *
+     * See the VAST spec for what attributes may be present on the different types
+     * of creatives
+     *
+     * Handles any timecode attribute as a timecode and converts it to a number
+     *
+     * @param {string} name The attribute name
+     * @param {*} [nothing] Value to return if attribute isn't present. Defaults to
+     *   undefined
+     * @returns {?string} The value for that attribute for this creative or default
+     *   if unset
+     */
+    VASTCreative.prototype.attribute = function(name, nothing) {
+        // TODO: attributes should be merged when augmented
+        if (!this.root.hasAttribute(name)) {
+            return nothing;
+        }
+
+        var attr = this.root.getAttribute(name);
+        switch (name) {
+            case 'skipoffset':
+            case 'duration':
+            case 'offset':
+            case 'minSuggestedDuration':
+                attr = this.timecodeFromString(attr);
+        }
+        return attr;
+    };
+
+    VASTLinear.prototype = Object.create(VASTCreative.prototype);
+    /**
+     * Returns the duration for this linear creative, or null if not set
+     *
+     * @returns {?number} The duration of this linear in seconds, null otherwise
+     */
+    VASTLinear.prototype.getDuration = function() {
+        return this.duration;
+    };
+
+    /**
+     * Returns a new, but identical VASTLinear object pointing to the given ad
+     *
+     * @param {VmapJwPlayer} ad The ad holding the copy of this creative
+     */
+    VASTLinear.prototype.copy = function(ad) {
+        return new VASTLinear(ad, this.root);
+    };
+    /**
+     * Adds the tracking events and creative elements found in the given VASTLinear
+     * record to those currently in this creative
+     *
+     * @param {VASTLinear} other VASTLinear object to merge into this one
+     */
+    VASTLinear.prototype.augment = function(other) {
+        this.duration = other.duration || this.duration;
+        this.mediaFiles = other.mediaFiles.slice(0) || this.mediaFiles.slice(0);
+        this.tracking.augment(other.tracking);
+        this.clickThrough = other.clickThrough || this.clickThrough;
+    };
+
+    /**
+     * Returns all media files associated with this linear so the caller can decide
+     * which one to play
+     *
+     * Each object in the returned list contains a "src" attribute, as well as any
+     * of the following attributes:
+     *   - delivery
+     *   - type
+     *   - bitrate
+     *   - minBitrate
+     *   - maxBitrate
+     *   - width
+     *   - height
+     *   - scalable
+     *   - maintainAspectRatio
+     *   - codec
+     *   - src
+     * according to the VAST specification.
+     *
+     * @returns {object[]} a list of media files for this linear
+     */
+    VASTLinear.prototype.getAllMedias = function() {
+        return this.mediaFiles;
+    };
+    /**
+     * This methods makes a best guess at what media file to choose for this linear
+     * based on the given target parameters. The target object should contain the
+     * width and height of the video player, as well as a target bitrate if
+     * applicable. If no bitrate is given, the highest bitrate is chosen, otherwise
+     * the closest bitrate is chosen.
+     *
+     * @param {{width: number, height: number, ?bitrate: number}} target The target
+     *   video settings
+     * @returns {?object} a single media file with the properties given for each
+     *   object in getAllMedias() or null if no media file is available
+     */
+    VASTLinear.prototype.getBestMedia = function(target) {
+        var best = Number.POSITIVE_INFINITY;
+        var besti = -1;
+        for (var i = 0; i < this.mediaFiles.length; i++) {
+            var media = this.mediaFiles[i];
+            // Root of the sum of the squares seems as good a mesure as any for a
+            // two-dimensional distance. Pythagoras FTW!
+            var distance = Math.sqrt(
+                Math.pow(target["width"] - media["width"], 2) +
+                Math.pow(target["height"] - media["height"], 2)
+            );
+
+            if (distance < best) {
+                best = distance;
+                besti = i;
+            } else if (distance === best) {
+                // If the two files are equally close to the target resolution, use
+                // bitrate as the pivot. Has bitrate > closer to target bitrate > highest
+                // bitrate
+                var other = this.mediaFiles[besti];
+                var otherBR = other["bitrate"] || other["maxBitrate"];
+                var mediaBR = media["bitrate"] || media["maxBitrate"];
+
+                if (mediaBR && !otherBR) {
+                    besti = i;
+                } else if (target["bitrate"] && otherBR && mediaBR) {
+                    if (Math.abs(mediaBR - target["bitrate"]) < Math.abs(otherBR - target["bitrate"])) {
+                        besti = i;
+                    }
+                } else if (mediaBR > otherBR) {
+                    besti = i;
+                }
+            }
+        }
+
+        if (besti === -1) {
+            return null;
+        }
+        return this.mediaFiles[besti];
+    };
+    /** @const **/
+    var VAST_LINEAR_TRACKING_POINTS = ['start',
+        'firstQuartile',
+        'midpoint',
+        'thirdQuartile',
+        'complete',
+        'progress',
+        'skip'
+    ];
+    /**
+     * Returns a list of positions in the playback of this ad when track() should be
+     * called. Each position is an object containing a position (either a percentage
+     * into the clip given by a number suffixed with %, an absolute number of
+     * seconds or one of the strings "start" or "end") and an event name. When the
+     * given position is reached in the playback of the ad, VmapJwPlayer.track() should be
+     * called giving the event name and the current playback position in absolute
+     * number of seconds.
+     *
+     * Note that this function will include points for the start, complete,
+     * firstQuartile, midpoint and thirdQuartile events, so these need not be
+     * explicitly added. There MAY be multiple events with the same offset, in which
+     * case track must be called for each one with their respective event names.
+     *
+     * The list will only include points that the VAST response explicitly request
+     * tracking for.
+     */
+    VASTLinear.prototype.getTrackingPoints = function() {
+        var events = this.tracking.getEventsOfTypes(VAST_LINEAR_TRACKING_POINTS);
+        var points = [];
+
+        var duration = null;
+        if (typeof this.duration !== 'undefined' && this.duration) {
+            duration = this.duration;
+        }
+
+        for (var i = 0; i < events.length; i++) {
+            var point = {"event": events[i]["event"], "offset": null, "percentOffset": null};
+            var offset;
+            switch (events[i]["event"]) {
+                case "start":
+                    point["percentOffset"] = "0%";
+                    point["offset"] = 0;
+                    break;
+                case "firstQuartile":
+                    point["percentOffset"] = "25%";
+                    if (duration) {
+                        point["offset"] = duration * 0.25;
+                    }
+                    break;
+                case "midpoint":
+                    point["percentOffset"] = "50%";
+                    if (duration) {
+                        point["offset"] = duration * 0.5;
+                    }
+                    break;
+                case "thirdQuartile":
+                    point["percentOffset"] = "75%";
+                    if (duration) {
+                        point["offset"] = duration * 0.75;
+                    }
+                    break;
+                case "complete":
+                    point["percentOffset"] = "100%";
+                    if (duration) {
+                        point["offset"] = duration;
+                    }
+                    break;
+                case "skip":
+                    offset = this.attribute('skipoffset', 0);
+                    if(offset.indexOf('%') === -1) {
+                        point["offset"] = VASTCreative.prototype.timecodeFromString(offset);
+                        if (duration) {
+                            point["percentOffset"] = (point["offset"] / duration * 100) + "%";
+                        }
+                    } else {
+                        point["percentOffset"] = offset;
+                        if (duration) {
+                            point["offset"] = duration * parseInt(point["percentOffset"], 10) / 100;
+                        }
+                    }
+                    break;
+                default:
+                    // progress-...
+                    offset = events[i]["offset"];
+                    if (!offset) {
+                        continue;
+                    }
+                    if (offset === "start") {
+                        offset = '0%';
+                    }
+                    if (offset === "end") {
+                        offset = '100%';
+                    }
+
+                    if(offset.indexOf('%') === -1) {
+                        point["offset"] = VASTCreative.prototype.timecodeFromString(offset);
+                        if (duration) {
+                            point["percentOffset"] = (point["offset"] / duration * 100) + "%";
+                        }
+                    } else {
+                        point["percentOffset"] = offset;
+                        if (duration) {
+                            point["offset"] = duration * parseInt(point["percentOffset"], 10) / 100;
+                        }
+                    }
+            }
+            points.push(point);
+        }
+
+        points.sort(function(a, b) {
+            if (a["offset"] && b["offset"]) {
+                return a["offset"] - b["offset"];
+            } else if (a["percentOffset"] && b["percentOffset"]) {
+                return parseInt(a["percentOffset"], 10) - parseInt(b["percentOffset"], 10);
+            }
+
+            return 0;
+        });
+
+        return points;
+    };
+    VASTStatic.prototype = Object.create(VASTCreative.prototype);
+    /**
+     * Adds the tracking events and creative elements found in the given
+     * VASTCompanion record to those currently in this creative
+     *
+     * @param {VASTCompanion} other VASTCompanion object to merge into this one
+     */
+    VASTStatic.prototype.augment = function(other) {
+        this.tracking.augment(other.tracking);
+        this.clickThrough = other.clickThrough || this.clickThrough;
+        this.resources["iframe"] = other.resources["iframe"] || this.resources["iframe"];
+        this.resources["html"] = other.resources["html"] || this.resources["html"];
+        for (var t in other.resources["images"]) {
+            if (other.resources["images"].hasOwnProperty(t)) {
+                this.resources["images"][t] = other.resources["images"][t];
+            }
+        }
+    };
+    /**
+     * Returns all resources associated with this creative.
+     *
+     * @returns {{?iframe: string, ?html: string, ?images}} an object representing
+     *   each of the possible resources that can be used to render this creative.
+     *   The iframe and html indexes have their respective URLs as values, whereas
+     *   images is a list of object, each with a src and type attribute
+     */
+    VASTStatic.prototype.getAllResources = function() {
+        return this.resources;
+    };
+    /**
+     * Extracts and handles ClickThrough and ClickTracking elements
+     *
+     * @param {string} prefix The prefix for the XML elements
+     */
+    VASTStatic.prototype.extractClicks = function(prefix) {
+        var el;
+        el = this.root.getElementsByTagName(prefix + "ClickThrough");
+        if (el.length) {
+            this.clickThrough = el.item(0).textContent.replace(/\s/g, "");
+        }
+
+        el = this.root.getElementsByTagName(prefix + "ClickTracking");
+        if (el.length) {
+            this.tracking.addClickTracking(el.item(0).textContent.replace(/\s/g, ""));
+        }
+    };
+    VASTCompanion.prototype = Object.create(VASTStatic.prototype);
+    /**
+     * Returns a new, but identical VASTCompanion object pointing to the given ad
+     *
+     * @param {VmapJwPlayer} ad The ad holding the copy of this creative
+     */
+    VASTCompanion.prototype.copy = function(ad) {
+        return new VASTCompanion(ad, this.root);
+    };
+
+    /**
+     * Adds the tracking events and creative elements found in the given
+     * VASTCompanion record to those currently in this creative
+     *
+     * @param {VASTCompanion} other VASTCompanion object to merge into this one
+     */
+    VASTCompanion.prototype.augment = function(other) {
+        VASTStatic.prototype.augment.call(this, other);
+        this.altText = other.altText || this.altText;
+    };
+    /**
+     * Returns the alt text given for this creative
+     *
+     * @returns {string} alternative text for this creative
+     */
+    VASTCompanion.prototype.getAltText = function() {
+        return this.altText;
+    };
+
+    VASTNonLinear.prototype = Object.create(VASTStatic.prototype);
+    /**
+     * Adds the tracking events and creative elements found in the given
+     * VASTNonLinear record to those currently in this creative
+     *
+     * @param {VASTNonLinear} other VASTNonLinear object to merge into this one
+     */
+    VASTNonLinear.prototype.augment = function(other) {
+        VASTStatic.prototype.augment.call(this, other);
+    };
+
+    /**
+     * Returns a new, but identical VASTNonLinear object pointing to the given ad
+     *
+     * @param {VmapJwPlayer} ad The ad holding the copy of this creative
+     */
+    VASTNonLinear.prototype.copy = function(ad) {
+        return new VASTNonLinear(ad, this.root);
+    };
+    CYVastPlayer.prototype.loadVMAP = function(url) {
+        //this.breaks = [];
+
+        var adHandler = this._onAdBreakFetched.bind(this);
+        var server = url;
+        // TODO: store VMAP object to track breakpoints regardless of ads
+        // This will require changes to _checkForMidroll so it checks *all* breaks,
+        // not just those received by _onAdBreakFetched. The index parameter should
+        // be used to merge here somehow...
+        new VMAP(server, adHandler);
+
+    };
+    CYVastPlayer.prototype.loadVAST = function(array) {
+
+        for(var i=0;i<array.length;i++){
+            var adds=array[i];
+            var onFetched = this._onAdBreakFetched.bind(this, -1, adds[0]);
+            queryVAST(adds[1], onFetched);
+        }
+    }; CYVastPlayer.prototype.log = function log() {
+        if (this.debug && console.log && console.log.apply) {
+            console.log.apply(console, arguments);
+        }
+    };
+    CYVastPlayer.prototype.logError = function logError() {
+        if (console.error && console.error.apply) {
+            console.error.apply(console, arguments);
+        } else {
+            this.log.apply(arguments);
+        }
+    };
+    CYVastPlayer.prototype.setAdsEnabled = function setAdsEnabled(enabled) {
+        this.adsEnabled = enabled;
+    };
+    CYVastPlayer.prototype._onAdBreakFetched = function (i, position, ad) {
+        var p = this._changeTimeToMe(position.constructor === Array ?position[this.loadedVast]:position);
+
+        this.breaks.push({
+            position: p,
+            ad: ad,
+            show : false
+        });
+
+        if(position.constructor === Array){
+            if(this.loadedVast==i){
+                this.AmIReady=true;
+                this.loadedVast=0;
+            }else{
+
+                this.loadedVast++;
+            }
+        }
+
+    };
+    CYVastPlayer.prototype.setVideoProperties = function setVideoProperties(width, height, bitrate) {
+        this.requestSettings.width = width;
+        this.requestSettings.height = height;
+        this.requestSettings.bitrate = bitrate;
+    };
+    CYVastPlayer.prototype._bindContextForCallbacks = function () {
+        this._onAdBreakFetched = this._onAdBreakFetched.bind(this),
+            this._showNextAd = this._showNextAd.bind(this),
+            // this._adsVideoEnd = this._adsVideoEnd.bind(this),
+            this._showNonLinear = this._showNonLinear.bind(this),
+            this._prepareAdPlayback = this._prepareAdPlayback.bind(this),
+            this._AdsEnd = this._AdsEnd.bind(this),
+            this.showAds = this.showAds.bind(this),
+            this.startAndEnd = this.startAndEnd.bind(this),
+            this._timeLineAds = this._timeLineAds.bind(this),
+            this._skipAds = this._skipAds.bind(this),
+            this._latestAd = this._latestAd.bind(this),
+            this.removeAds = this.removeAds.bind(this)
+    };
+    CYVastPlayer.prototype._showNextAd = function _showNextAd(first) {
+
+        if (first instanceof VmapJwPlayer && first !== null && first !== undefined) {
+            this.activeAd = first;
+        } else if(this.activeAd!==null){
+            this.activeAd = this.activeAd.getNextAd();
+        }
+
+
+        if(this.activeAd!==null){
+            if (!this.adsEnabled || this.activeAd === null) {
+                this.log('no more ads');
+
+                return false;
+            }
+
+            if (!this.activeAd.hasData()) {
+
+                return this._showNextAd();
+            }
+
+            this.log('showing next ad');
+
+            if (this.activeAd.linear!=null) {
+                this.adVideo = this.activeAd.linear.getBestMedia(this.requestSettings);
+                this.log('found linear', this.adVideo);
+            }
+
+            var companions = this.activeAd.getCompanions();
+
+            for (var i = 0; i < companions.length; i++) {
+                var c = companions[i];
+            }
+
+            if(this.activeAd.nonlinears!=null){
+                if(this.activeAd.nonlinears.length!=0){
+                    this._showNonLinear();
+                }
+            }
+            return true;
+        }
+
+    };
+
+    CYVastPlayer.prototype._showNonLinear= function _showNonLinear(){
+
+        var itemNon=this.activeAd.nonlinears[0];
+        var images=null;
+        var clickThrough=null;
+        var TrackingEvents=null;
+        var HTMLTemp=null;
+        var rendered=null;
+        var closeBTN=document.createElement("div");
+        closeBTN.setAttribute("class","jw-ads-close-btn-nonlinear jw-icon jw-icon-close");
+        closeBTN.style.width="24px";
+        closeBTN.style.height="24px";
+        closeBTN.style.display="block";
+        closeBTN.style.cursor="pointer";
+        closeBTN.style.position="absolute";
+        closeBTN.style.color="#fff";
+        closeBTN.style.background="#000";
+        closeBTN.style.borderRadius="4px";
+        closeBTN.style.border="1px solid #fff";
+        closeBTN.style.fontSize="10px";
+        closeBTN.style.lineHeight="11px";
+        closeBTN.style.left="none";
+        closeBTN.style.right="9.6%";
+        closeBTN.style.top="-9px";
+
+
+        addRule(".jw-icon-close:before", {
+            top: "5px",
+            position: "absolute",
+            left: "6px"
+        });
+
+        var thats=this.player.getState();
+        var that=this;
+        closeBTN.addEventListener(clickEvent,function(e){
+            this.parentNode.parentNode.removeChild(this.parentNode);
+            if(that.player.getState()=="paused"){
+                that.player.play();
+            }else{
+
+            }
+
+        });
+
+        if(itemNon.clickThrough!=null){
+            clickThrough=itemNon.clickThrough;
+        }
+
+        if(itemNon.tracking.events!=null){
+            TrackingEvents=itemNon.tracking.events;
+        }
+
+        this.BannerNonLinear=null;
+        if(itemNon.resources.html!=null){
+            if(itemNon.resources.html.length!=0){
+
+
+            }
+        }else if(itemNon.resources.iframe!=null){
+            if(itemNon.resources.iframe.length!=0){
+
+
+            }
+        }else if(itemNon.resources.images!=null){
+            if(itemNon.resources.images.length!=0){
+                images=itemNon.resources.images[Object.keys(itemNon.resources.images)[0]];
+                HTMLTemp="";
+                HTMLTemp+="<img style='width:80%;height:auto;margin-left:10%;margin-right:10%;' src='"+images+"'/>";
+            }
+        }
+        var clicking=function(){
+            window.open(clickThrough, '_blank');
+        };
+        rendered=document.createElement("div");
+        rendered.style.direction="ltr";
+        rendered.style.width="100%";
+        this.BannerCampain.style.direction="ltr";
+        rendered.id='ads'+Math.ceil(Math.random()*10000000);
+        rendered.appendChild(closeBTN);
+        adsTagA=document.createElement("a");
+        adsTagA.style.display="block";
+        adsTagA.addEventListener("touchstart",clicking);
+        if(clickThrough!=null){
+            adsTagA.href=clickThrough;
+            adsTagA.target="_blank";
+        }
+        adsTagA.innerHTML=HTMLTemp;
+        rendered.appendChild(adsTagA);
+        rendered.style.position="absolute";
+        rendered.style.bottom="40px";
+        this.BannerCampain.appendChild(rendered);
+
+        rendered.style.marginLeft="auto";
+        rendered.style.marginRight="auto";
+        this.BannerCampain.style.textAlign="center";
+
+        if(itemNon.root.attributes["minSuggestedDuration"]!=null && itemNon.root.attributes["minSuggestedDuration"]!=undefined){
+            var minSuggestedDuration=this._changeTimeToMe(itemNon.root.attributes["minSuggestedDuration"].nodeValue);
+
+            setTimeout(function(evtt){
+                if(closeBTN!=null && closeBTN.parentNode!=null && closeBTN.parentNode.parentNode!=null){
+                    closeBTN.parentNode.parentNode.removeChild(closeBTN.parentNode);
+                }
+            },minSuggestedDuration*1000);
+        }
+
+        this.ResizeBanner(null);
+
+        for(var trackEvent in TrackingEvents){
+
+            var Events = TrackingEvents[trackEvent];
+
+            switch (trackEvent){
+                case "start":
+                    for(var start in Events){
+                        this._trackerURL(Events[start].url);
+
+                    }
+                    break;
+
+            }
+        }
+
+    };
+    CYVastPlayer.prototype._trackerURL= function _trackerURL(url){
+
+        var xhttp=null;
+        if (window.XMLHttpRequest){
+            xhttp=new XMLHttpRequest({mozSystem: true});
+
+        }else{
+            xhttp=new ActiveXObject("Microsoft.XMLHTTP");
+
+        }
+
+        xhttp.open("GET",url,false);
+        xhttp.send();
+
+    };
+    CYVastPlayer.prototype._runAds = function _runAds(insertionPoint, ad) {
+
+        this.requestSettings.insertionPointType = insertionPoint;
+
+        // if(insertionPoint == "start") {
+        // }
+        switch (insertionPoint) {
+            case 'start':
+
+                ad = null;
+                for (var i = 0, l = this.breaks.length; i < l; i++) {
+
+                    if (this.breaks[i].position === insertionPoint) {
+                        ad = this.breaks[i].ad.ads[0];
+                        if(this.breaks[i].ad.ads[0].linear!=null){
+                            if(this.breaks[i].ad.ads[0].linear.length!=0){
+
+                                this._prepareAdPlayback(ad);
+                                this.lastPlayedMidroll=i;
+                                return ;
+
+
+                            }
+                        }
+                        break;
+                    }
+
+                }
+                break;
+            case 'end':
+
+                for (var i = 0, l = this.breaks.length; i < l; i++) {
+
+                    if (this.breaks[i].position === "end") {
+                        ad = this.breaks[i].ad.ads[0];
+                        this._prepareAdPlayback(ad , 'end');
+                        // this.lastPlayedMidroll=i;
+                        break;
+                    }
+
+                }
+
+                break;
+            case 'position':
+                ad =  ad.ad.ads[0];
+                if(ad.linear!=null){
+                    if(ad.linear.length!=0){
+                        this._prepareAdPlayback(ad);
+                        return;
+                    }
+                }
+                break;
+        }
+        
+             if (insertionPoint == 'position' || insertionPoint == 'start') {
+                 this._showNextAd(ad);
+             }
+       
+        
+
+
+    };
+   
+    CYVastPlayer.prototype._prepareAdPlayback = function _prepareAdPlayback(ad , status){
+        var video = document.querySelector("video");
+        if(this.player.getState()==="playing"){
+            this.player.pause();
+            // fallback for fullscreen in iphone
+            window.setTimeout(function() {
+                if (video.webkitDisplayingFullscreen) {
+                    Document.fullscreenElement()
+                    video.webkitExitFullscreen();
+                }
+            },1500)
+
+
+        }
+
+        if(this.onAds==true){
+            return;
+        }
+
+        this.player.getContainer().setAttribute("class",this.player.getContainer().getAttribute("class")+" jw-flag-ads");
+
+        this.onAds=true;
+        this.Skipable=false;
+
+        var vr=this.player.getContainer().querySelector("#VR");
+        if(vr!=null){
+            vr.style.position="absolute";
+        }
+
+        html=this.player.getContainer();
+
+        this.player.setControls(false);
+
+        var mediaFile=ad.linear.mediaFiles[0];
+        var domainTitleText=ad.properties.AdTitle;
+        var currentDuration=ad.duration;
+
+        this.activeAd=ad;
+
+        var Skip = document.createElement("div");
+
+        Skip.setAttribute("class","jw-ads-skip");
+
+        // Skip.style.background = "rgba(0, 0, 0, 0.5) none repeat scroll 0 0";
+        Skip.style.display = "table";
+        Skip.style.position = "absolute";
+        Skip.style.left = "0";
+        Skip.style.bottom = "15px";
+        Skip.style.textAlign = "center";
+        Skip.style.color = "#ffffff";
+        // Skip.style.borderTop = "1px solid #1a1a1a";
+        // Skip.style.borderRight = "1px solid #1a1a1a";
+        // Skip.style.borderBottom = "1px solid #1a1a1a";
+        Skip.style.fontSize = "13px";
+        Skip.style.fontWeight = "bold";
+        Skip.style.fontFamily = "Tahoma, Arial, Helvetica, sans-serif";
+        Skip.style.padding = "7px 30px 10px 30px";
+        Skip.style.zIndex="999999";
+
+        // function hoverSkip() {
+        //     Skip.style.background = "rgba(0, 0, 0, 0.9) none repeat scroll 0 0";
+        // }
+        // function unHoverSkip() {
+        //     Skip.style.background = "rgba(0, 0, 0, 0.5) none repeat scroll 0 0";
+        // }
+
+        // Skip.onmouseout  = unHoverSkip;
+        // Skip.onmouseover = hoverSkip;
+
+
+        var clicking=function(){
+            window.open(ad.linear.clickThrough, '_blank');
+        };
+        var shadowOverlay = document.createElement("div");
+        shadowOverlay.setAttribute("class","shadowOverlay");
+        shadowOverlay.style.position = "absolute";
+        shadowOverlay.style.left = "0";
+        shadowOverlay.style.width = "100%";
+        shadowOverlay.style.height = "60px";
+        shadowOverlay.style.bottom = "0";
+        shadowOverlay.style.zIndex = "999998";
+        shadowOverlay.style.backgroundImage = '-moz-linear-gradient(center bottom , rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.4) 60%, rgba(0, 0, 0, 0) 99%)';
+        shadowOverlay.style.backgroundImage = '-webkit-linear-gradient(bottom,rgba(0,0,0,0.5),rgba(0,0,0,0.4) 60%,rgba(0,0,0,0) 99%)';
+        shadowOverlay.style.backgroundImage = '-ms-linear-gradient(center bottom , rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.4) 60%, rgba(0, 0, 0, 0) 99%)';
+        shadowOverlay.style.backgroundImage = '-o-linear-gradient(center bottom , rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.4) 60%, rgba(0, 0, 0, 0) 99%)';
+        shadowOverlay.style.backgroundImage = 'linear-gradient(center bottom , rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.4) 60%, rgba(0, 0, 0, 0) 99%)';
+
+        var domainTitle=document.createElement("A");
+        var linkIcon = '<svg style="position: relative; left: -6px;top:4px;" width="16px" height="16px" viewBox="0 0 16 16" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:sketch="http://www.bohemiancoding.com/sketch/ns"><g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd" sketch:type="MSPage"><path d="M13.3333333,13.3333333 L2.66666667,13.3333333 L2.66666667,2.706375 L5.33333333,2.66666667 L5.33333333,0 L0,0 L0,16 L16,16 L16,9.33333333 L13.3333333,9.33333333 L13.3333333,13.3333333 L13.3333333,13.3333333 Z M8,0 L10.6666667,2.66666667 L6.66666667,6.66666667 L9.33333333,9.33333333 L13.3333333,5.33333333 L16,8 L16,0 L8,0 L8,0 Z" id="Shape" fill="#fff" sketch:type="MSShapeGroup"></path></g></svg>';
+        domainTitle.innerHTML=  linkIcon + 'view' ;
+        domainTitle.href=ad.linear.clickThrough;
+        domainTitle.setAttribute("target","_blank");
+        domainTitle.style.textShadow = "0 2px 6px rgb(0, 0, 0.6)";
+        // domainTitle.style.background = "rgba(0,0,0,0.6)";
+        domainTitle.style.display = "block";
+        domainTitle.style.position = "absolute";
+        domainTitle.style.right = "0";
+        domainTitle.style.bottom = "15px";
+        domainTitle.style.textAlign = "center";
+        domainTitle.style.color = "#ffffff";
+        domainTitle.style.fontSize = "13px";
+        domainTitle.style.fontWeight = "bold";
+        domainTitle.style.fontFamily = "Tahoma, Arial, Helvetica, sans-serif";
+        domainTitle.style.padding = "7px 10px 10px 5px";
+        domainTitle.style.zIndex="9999999999";
+        domainTitle.style.cursor="pointer";
+        domainTitle.style.borderBottom="1px solid #fff";
+        domainTitle.style.marginLeft="15px";
+        domainTitle.style.cursor="pointer";
+        domainTitle.addEventListener("touchend",clicking);
+
+
+
+
+
+
+
+        this.adPlayerTimeLine=document.createElement("div");
+        this.adPlayerTimeLine.setAttribute("class","jw-ads-timeline");
+        this.adPlayerTimeLine.style.width="0%";
+        this.adPlayerTimeLine.style.height="4px";
+        this.adPlayerTimeLine.style.position="absolute";
+        this.adPlayerTimeLine.style.backgroundColor="#f3bc36";
+        this.adPlayerTimeLine.style.bottom="0";
+        this.adPlayerTimeLine.style.zIndex="999999";
+
+        if(status != 'end') {
+                Skip.addEventListener(clickEvent, this._skipAds);
+        } else {
+            Skip.addEventListener(clickEvent, this._latestAd);
+        }
+
+        
+
+
+        this.skip=Skip;
+        this.domainTitle=domainTitle;
+        this.shadowOverlay=shadowOverlay;
+
+        var clickThrough=ad.linear.clickThrough;
+        thatclick=this;
+
+
+        var clicking=function(){
+            if(clickThrough!=""){
+                if(mediaFile.type.indexOf("video")>-1){
+                    thatclick.adPlayer.play();
+                    window.open(clickThrough, '_blank');
+                    clickThrough="";
+                }else{
+                    window.open(clickThrough, '_blank');
+                }
+            }else{
+                if(mediaFile.type.indexOf("video")>-1){
+                    thatclick.adPlayer.play();
+                }
+                return false;
+            }
+        };
+        this.adsPlayerZone=document.createElement("div");
+        this.adsPlayerZone.style.position="absolute";
+        this.adsPlayerZone.style.display="block";
+        this.adsPlayerZone.style.background="#000";
+        this.adsPlayerZone.style.width="100%";
+        this.adsPlayerZone.style.height="100%";
+        this.adsPlayerZone.style.zIndex="999998";
+        this.adsPlayerZone.id="adsPlayer"+parseInt(Math.random()*10000000);
+        this.video.parentNode.appendChild(this.adsPlayerZone);
+        html.querySelector(".jw-preview ").style.display="none";
+
+        if(mediaFile.type== null || mediaFile.type.indexOf("video")>-1){
+            this.adPlayer=jwplayer(this.adsPlayerZone.id);
+            this.adPlayer.setup({
+                playlist: [{
+                    sources:[{
+                        file:mediaFile.src,
+                        type:"video/mp4"
+                    }],
+                }],
+                aspectratio: "16:9",
+                stretching:'uniform',
+                primary: "html5",
+
+                autostart: true,
+                width:"100%",
+                height:"100%"
+            });
+
+            this.adPlayer.on("error",this._AdsEnd);
+
+            this.adPlayer.setControls(true);
+
+            that=this;
+
+            this.adPlayer.on("ready",function(){
+                var adscontentPlayer = that.adPlayer.getContainer();
+
+                adscontentPlayer.querySelector(".jw-video").style.cursor="pointer";
+                adscontentPlayer.style.display="block";
+                adscontentPlayer.appendChild(that.adPlayerTimeLine);
+                adscontentPlayer.parentNode.appendChild(that.skip);
+                adscontentPlayer.parentNode.appendChild(that.domainTitle);
+                adscontentPlayer.parentNode.appendChild(that.shadowOverlay);
+                if(navigator.userAgent.match(/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i)) {
+                }
+                else {
+                    adscontentPlayer.addEventListener(clickEvent,clicking);
+                }
+
+
+
+            });
+
+
+
+        }else if(mediaFile.type != null && (mediaFile.type.indexOf("image")>-1 || mediaFile.type.indexOf("iframe")>-1 || mediaFile.type.indexOf("html")>-1)){
+
+            this.adPlayer=new CYplayer(mediaFile.type,mediaFile.src , clickThrough);
+            this.adPlayer.setDuration(ad.linear.duration);
+            var globalDuration;
+            window.globalDuration = ad.linear.duration;
+
+            this.adsPlayerZone.appendChild(this.adPlayer.Media);
+            this.adPlayer.Media.parentNode.parentNode.appendChild(this.adPlayerTimeLine);
+            this.adPlayer.Media.parentNode.parentNode.appendChild(this.skip);
+            this.adPlayer.Media.parentNode.parentNode.appendChild(this.domainTitle);
+            this.adPlayer.Media.parentNode.parentNode.appendChild(this.shadowOverlay);
+            // if(navigator.userAgent.match(/Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i)) {
+
+            // }
+            // else {
+            //     this.adsPlayerZone.addEventListener("click", clicking);
+            // }
+            //    if(status != 'end') {
+                        this.adPlayer.play();
+                        // this.adPlayer.setSize();
+            //    }
+            
+            
+        }
+
+        this.adPlayer.onTime(this._timeLineAds);
+
+           if(status != 'end') {
+                this.adPlayer.onComplete(this._AdsEnd);
+           } else {
+                this.adPlayer.onComplete(this._latestAd);
+                //  this.adPlayer.onComplete(function() {
+                // console.log("milad");
+                   
+                // });
+
+           }
+            
+          
+
+                
+        
+        if(this.activeAd.linear.root.getAttribute("skipOffset")!=null){
+            var timeSkip = this._changeTimeToMe(this.activeAd.linear.root.getAttribute("skipOffset"));
+        }else{
+            var timeSkip = parseInt(this.adPlayer.getDuration());
+        }
+
+
+        timeSkip = timeSkip + "sec to skip";
+        Skip.innerHTML=timeSkip;
+
+    };
+     CYVastPlayer.prototype._latestAd = function _latestAd(){
+
+        this.player.getContainer().setAttribute("class",this.player.getContainer().getAttribute("class").replace(" jw-flag-ads",""));
+        mediaFile = this.activeAd.linear.mediaFiles[0];
+
+        if(mediaFile.type == null || mediaFile.type.indexOf("video")>-1){
+
+            var adscontentPlayer = this.adPlayer.getContainer();
+
+            adscontentPlayer.style.display="none";
+            this.adPlayer.remove();
+
+        }else if(mediaFile.type != null && (mediaFile.type.indexOf("image")>-1 || mediaFile.type.indexOf("iframe")>-1 || mediaFile.type.indexOf("html")>-1)){
+                    // this.adPlayer.Media.parentNode.parentNode.removeChild(this.adPlayerTimeLine);
+                    document.getElementsByClassName("jw-ads-timeline")[0].remove();
+                    this.adPlayer.stop();
+        }
+
+        this.skip.parentNode.removeChild(this.skip);
+        this.domainTitle.parentNode.removeChild(this.domainTitle);
+        this.shadowOverlay.parentNode.removeChild(this.shadowOverlay);
+        delete this.adPlayer;
+        this.adsPlayerZone.parentNode.removeChild(this.adsPlayerZone);
+        delete this.adsPlayerZone;
+        delete this.skip;
+        delete this.domainTitle;
+        delete this.shadowOverlay;
+        this.onAds=false;
+        this.TrackingEvent.start = false;
+        this.TrackingEvent.firstQuartile = false;
+        this.TrackingEvent.midpoint = false;
+        this.TrackingEvent.thirdQuartile = false;
+        this.TrackingEvent.compelete = false;
+
+        this.player.setControls(true);
+
+    };
+    CYVastPlayer.prototype._skipAds = function _skipAds(evt){
+
+        if(this.Skipable==false){
+            return ;
+        }
+        if(this.onAds==false){
+            return;
+        }
+        this.player.getContainer().setAttribute("class",this.player.getContainer().getAttribute("class").replace(" jw-flag-ads",""));
+        mediaFile = this.activeAd.linear.mediaFiles[0];
+
+        if(mediaFile.type == null || mediaFile.type.indexOf("video")>-1){
+
+            var adscontentPlayer = this.adPlayer.getContainer();
+
+            adscontentPlayer.style.display="none";
+            this.adPlayer.remove();
+
+        }else if(mediaFile.type != null && (mediaFile.type.indexOf("image")>-1 || mediaFile.type.indexOf("iframe")>-1 || mediaFile.type.indexOf("html")>-1)){
+
+            this.adPlayer.Media.parentNode.parentNode.removeChild(this.adPlayerTimeLine);
+            this.adPlayer.stop();
+
+        }
+
+        
+
+        this.skip.parentNode.removeChild(this.skip);
+        this.domainTitle.parentNode.removeChild(this.domainTitle);
+        this.shadowOverlay.parentNode.removeChild(this.shadowOverlay);
+        delete this.adPlayer;
+        this.adsPlayerZone.parentNode.removeChild(this.adsPlayerZone);
+        delete this.adsPlayerZone;
+        delete this.skip;
+        delete this.domainTitle;
+        delete this.shadowOverlay;
+        this.onAds=false;
+        this.TrackingEvent.start = false;
+        this.TrackingEvent.firstQuartile = false;
+        this.TrackingEvent.midpoint = false;
+        this.TrackingEvent.thirdQuartile = false;
+        this.TrackingEvent.compelete = false;
+        var vr=this.player.getContainer().querySelector("#VR");
+        if(vr!=null){
+            vr.style.position="";
+        }
+
+        if(this.player.getState()!="playing"){
+            this.player.play();
+        }
+
+        this.player.setControls(true);
+
+        var thisVideo = document.getElementById(this.player.id);
+
+        this.breaks[this.lastPlayedMidroll].show=true;
+        that=this;
+        setTimeout(function(){
+            flag=false;
+            for (var i = 0, l = that.breaks.length; i < l; i++) {
+                if (
+                    that.breaks[i].position === that.breaks[that.lastPlayedMidroll].position &&
+                    that.breaks[i].show === false
+                ) {
+                    ad = that.breaks[i].ad.ads[0];
+                    if(that.breaks[i].ad.ads[0].linear!=null){
+                        if(that.breaks[i].ad.ads[0].linear.length!=0){
+                            that._prepareAdPlayback(ad);
+                            that.lastPlayedMidroll=i;
+                            flag=true;
+                            break;
+                        }
+                    }
+
+                }
+            }
+            if(flag==false){
+                if(that.player.getState()=="paused"){
+                    that.player.play();
+                }
+            }
+        },300);
+
+    };
+    CYVastPlayer.prototype._AdsEnd = function _AdsEnd(){
+        this.Skipable=true;
+        this._skipAds();
+        var Event=this.activeAd.linear.tracking.events;
+
+        if(Event.complete!=undefined){
+
+            for(var i=0 ;i<Event.complete.length;i++){
+                var iframeElement = document.createElement('iframe');
+                iframeElement.setAttribute("width", "0");
+                iframeElement.setAttribute("height", "0");
+                iframeElement.setAttribute("scrolling", "no");
+                iframeElement.setAttribute("allowtransparency", "true");
+                iframeElement.setAttribute("hspace", "0");
+                iframeElement.setAttribute("vspace", "0");
+                iframeElement.setAttribute("marginheight", "0");
+                iframeElement.setAttribute("marginwidth", "0");
+                iframeElement.setAttribute("src", Event.complete[i].url);
+                document.body.appendChild(iframeElement);
+                window.setTimeout(function() {
+                    iframeElement.remove();
+                },10000);
+                // this._trackerURL(Event.complete[i].url);
+            }
+            this.TrackingEvent.complete = false;
+        }
+    };
+    CYVastPlayer.prototype._timeLineAds = function _timeLineAds(){
+
+        // if(this.player.getState()!="paused"){
+        //     this.player.pause();
+        // }
+        if(this.onAds){
+            var jack=parseFloat((this.adPlayer.getPosition()/this.adPlayer.getDuration())*100);
+            var Event=this.activeAd.linear.tracking.events;
+            this.adPlayerTimeLine.style.width=jack+"%";
+            this.adPlayerTimeLine.style.width=setInterval+"%";
+
+            var posOfAds=this.adPlayer.getPosition();
+
+            if(this.skip!=null){
+                var timeSkip=(this.activeAd.linear.root.getAttribute("skipOffset")!=null?this._changeTimeToMe(this.activeAd.linear.root.getAttribute("skipOffset")):parseInt(this.adPlayer.getDuration()));
+                if(timeSkip<posOfAds){
+                    this.Skipable=true;
+                    var skipIcon = '<svg style="position: relative; left: 0px; top: 4px" width="16" height="16" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><polygon fill="#fff" points="2,2 28,16 2,30"/><rect fill="#fff" height="28" width="4" x="26" y="2"/></svg>';
+                    this.skip.innerHTML="Skip";
+                    this.skip.setAttribute("class",this.skip.getAttribute("class")+" jw-icon jw-icon-skip-forward");
+                    this.skip.style.cursor = "pointer";
+                }else{
+                    this.skip.innerHTML=(timeSkip-parseInt(posOfAds)) + " " +  "sec to skip"
+
+                }
+            }
+            if(Event.start!=null){
+                if(this.TrackingEvent.start==undefined || this.TrackingEvent.start==null || this.TrackingEvent.start==false){
+                    this.TrackingEvent.start = true;
+                    for(var i=0 ;i<Event.start.length;i++){
+                        this._trackerURL(Event.start[i].url);
+                    }
+                }
+
+            }
+
+            if(jack>25 && this.TrackingEvent.firstQuartile == false && this.TrackingEvent.firstQuartile!==undefined){
+
+                this.TrackingEvent.firstQuartile = true;
+                if(Event.firstQuartile!=null){
+                    for(var i=0 ;i<Event.firstQuartile.length;i++){
+                        this._trackerURL(Event.firstQuartile[i].url);
+                    }
+                }
+
+            }else if(jack>50 && this.TrackingEvent.midpoint == false && this.TrackingEvent.midpoint!==undefined){
+
+                this.TrackingEvent.midpoint=true;
+                if(Event.midpoint!=null){
+                    for(var i=0 ;i<Event.midpoint.length;i++){
+                        this._trackerURL(Event.midpoint[i].url);
+                    }
+                }
+
+            }else if(jack>75 && this.TrackingEvent.thirdQuartile == false && this.TrackingEvent.thirdQuartile!==undefined){
+
+                this.TrackingEvent.thirdQuartile=true;
+                if(Event.thirdQuartile!=null){
+                    for(var i=0 ;i<Event.thirdQuartile.length;i++){
+                        this._trackerURL(Event.thirdQuartile[i].url);
+                    }
+                }
+            }
+
+        }
+
+    };
+    CYVastPlayer.prototype._changeTimeToMe = function _changeTimeToMe(time) {
+        var temp=time.split(":");
+        if(temp.length == 1){
+            result=time;
+        }else{
+            result=parseInt(temp[0])*3600+parseInt(temp[1])*60+parseInt(temp[2]);
+        }
+        return result;
+    };
+    // CYVastPlayer.prototype._adsVideoEnd = function _adsVideoEnd() {
+    //     // console.log("milix");
+    //     this._release();
+    //     this.adPlaying = false;
+    //     this.player.play();
+
+    // };
+    CYVastPlayer.prototype.showAds = function showAds(evt){
+        if (this.adPlaying) {
+            return false;
+        }
+        if (this.breaks.length === 0) {
+            return false;
+        }
+        var potentialMidroll = null;
+
+        for (var i = -1, l = this.breaks.length-1; i < l; l--) {
+
+            if(parseInt(this.breaks[l].position)!== NaN){
+
+                if (this.breaks[l].position == parseInt(this.player.getPosition()) && this.IntCurrentTime!=parseInt(this.player.getPosition())) {
+
+                    potentialMidroll = l;
+
+
+                    break;
+                }
+
+            }
+        }
+
+
+        if(this.IntCurrentTime!= parseInt(this.player.getPosition())){
+            this.IntCurrentTime=parseInt(this.player.getPosition());
+
+        }
+
+        if (potentialMidroll !== null && this.breaks[potentialMidroll].show==false) {
+            this.lastPlayedMidroll = potentialMidroll;
+            this._runAds('position', this.breaks[potentialMidroll]);
+            this.breaks[potentialMidroll].show=true;
+            return true;
+        }
+        return false;
+    };
+    CYVastPlayer.prototype.startAndEnd= function startAndEnd(evt){
+        switch(evt.type){
+            case "start":
+                break;
+            case "beforePlay":
+
+                break;
+            case "play":
+                if(this.startedYet==false){
+                    this._runAds("start");
+                    this.startedYet=true;
+                }
+                break;
+            case "complete":
+
+                this._runAds("end");
+                // window.setInterval(function (e) {
+                //     // document.querySelector("video").pause();
+                //     // jwplayer().stop(); // remove this if you want repeat the video
+                // }, window.globalDuration);
+
+
+                break;
+
+            default:
+                // console.log(evt);
+                break;
+        }
+    };
+    CYVastPlayer.prototype.watchPlayer = function watchPlayer(videoElement) {
+        this.player = videoElement;
+        this.hasShownPreroll = false;
+        this.hasShownPostroll = false;
+        this.player.onTime(this.showAds);
+        this.player.onPlay(this.startAndEnd);
+        this.player.onComplete(this.startAndEnd);
+        this.player.onResize(this.ResizeBanner);
+        var that=this;
+
+
+        return true;
+    };
+    CYVastPlayer.prototype.removeAds = function (){
+
+        this.player.off("time",this.showAds);
+        this.player.off("play",this.startAndEnd);
+        this.player.off("complete",this.startAndEnd);
+        this.player.off("resize",this.ResizeBanner);
+
+    };
+    CYVastPlayer.prototype.setAdZone = function adsZone(video,banner) {
+        this.BannerCampain=banner;
+        this.video=video;
+        return true;
+    };
+    if (typeof Function.prototype.bind === 'undefined') {
+        Function.prototype.bind = function () {
+            var __method = this, args = Array.prototype.slice.call(arguments), object = args.shift();
+            return function () {
+                var local_args = args.concat(Array.prototype.slice.call(arguments));
+                if (this !== window) {
+                    local_args.push(this);
+                }
+                return __method.apply(object, local_args);
+            };
+        };
+    };
+    (function(jwplayer){
+
+        var Plugin = function(player, config, div) {
+
+            function setup(evt) {
+                playermain=player;
+
+                html=player.getContainer();
+                video=html.querySelector(".jw-video");
+                var conf=player.getConfig();
+                var adsTemp=null;
+                if(player.getPlaylistItem().advertising!==undefined && player.getPlaylistItem().advertising!==null){
+
+                    adsTemp=player.getPlaylistItem().advertising;
+                }else if(conf.advertising !== null){
+                    adsTemp=conf.advertising;
+                } else {
+
+                    return;
+                }
+
+                if(adsTemp!=null && adsTemp!=""){
+                    ads = new CYVastPlayer(false);
+                    var flag=0;
+                    if(adsTemp.schedule!==undefined && adsTemp.schedule!==null){
+                        ads.loadVMAP(adsTemp.schedule);
+                        flag++;
+                    }
+                    if(adsTemp.arms!==undefined && adsTemp.arms!==null){
+                        ads.loadArms(adsTemp.arms);
+                        flag++;
+                    }
+
+                    if(adsTemp.vasts!==undefined && adsTemp.vasts!==null){
+                        ads.loadVAST(adsTemp.vasts);
+                        flag++;
+                    }
+
+                    if(flag!=0){
+
+                        div.style.display="block";
+
+                        videoOverlay=document.createElement("div");
+                        videoOverlay.style.position="absolute";
+                        videoOverlay.style.width="100%";
+                        videoOverlay.style.height="100%";
+
+                        video.parentNode.appendChild(videoOverlay);
+                        ads.setVideoProperties(player.getWidth(), player.getHeight());
+                        ads.watchPlayer(playermain);
+                        ads.setAdZone(video,videoOverlay);
+                    }
+                }
+
+            };
+
+            function onPlaylistItemChange(evt){
+                if(player.getPlaylistIndex()==0)
+                    return ;
+                if(videoOverlay!=null){
+                    video.parentNode.removeChild(videoOverlay);
+                    ads.removeAds();
+                    delete ads;
+                    delete playermain;
+                }
+                setup();
+            };
+
+            player.onPlaylistItem(onPlaylistItemChange);
+            player.onReady(setup);
+
+        };
+        var PluginDetail={
+            name:"VmapJwPlayer",
+            version:"1.0"
+        };
+
+        var minPlayerVersion = "7.0";
+        var pluginName = 'VmapJwPlayer';
+
+        jwplayer().registerPlugin(pluginName,minPlayerVersion, Plugin);
+
+    })(jwplayer);
+
+}
